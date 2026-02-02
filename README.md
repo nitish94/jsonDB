@@ -7,6 +7,7 @@ A simple REST API-based database system using JSON files as collections. Built w
 - JWT-based authentication for API access.
 - CRUD operations (Create, Read, Update, Delete) for JSON records.
 - Batch operations for efficient bulk data handling.
+- Collection management: create, delete (archive), rename.
 - Each JSON file acts as a separate collection/database with record limits.
 - Automatic ID generation (incremental integers).
 - Pagination for listing records.
@@ -14,6 +15,7 @@ A simple REST API-based database system using JSON files as collections. Built w
 - Atomic writes with backup system for data integrity.
 - Transactional batch operations (all-or-nothing).
 - Rate limiting (10 requests/second) to prevent abuse.
+- Structured logging with file rotation.
 - Proper logging and error handling.
 - Configurable settings via .env file.
 
@@ -33,6 +35,8 @@ A simple REST API-based database system using JSON files as collections. Built w
 ### Protected Endpoints (Require JWT)
 #### Collection Management
 - `POST /collections` - Create a new collection. Body: `{"name": "collection_name", "records": [{"key": "value", ...}, ...]}`. At least one record required. IDs auto-assigned if not provided, must be unique integers.
+- `DELETE /collections/:collection` - Delete (archive) a collection. Moves to `bin/` with timestamp.
+- `PUT /collections/:collection` - Rename a collection. Body: `{"name": "new_name"}`.
 
 #### Record Operations
 - `POST /:collection` - Create a new record. Body: JSON object without "id". Limited by RECORD_LIMIT.
@@ -90,6 +94,21 @@ Authorization: Bearer <token>
     {"name": "Item1", "value": 100},
     {"id": 5, "name": "Item2", "value": 200}
   ]
+}
+```
+
+### Delete Collection
+```
+DELETE /collections/users
+Authorization: Bearer <token>
+```
+
+### Rename Collection
+```
+PUT /collections/oldname
+Authorization: Bearer <token>
+{
+  "name": "newname"
 }
 ```
 
@@ -178,9 +197,12 @@ Authorization: Bearer <token>
 - Input validation includes collection name, ID types, and JSON structure.
 - Thread-safe operations with per-collection locking (readers-writer mutex).
 - Collections are created via POST /collections with initial records.
+- Delete collections: moved to `bin/` with timestamp (e.g., `20231001_120000_users.json`).
+- Rename collections: file renamed, mutex updated.
 - Hard limit on records per collection to prevent memory issues.
 - Atomic writes: data is written to temp file, then renamed; backups created before changes.
 - Batch operations are transactional: all succeed or all fail.
 - Rate limiting applied to protected endpoints.
+- Logging: structured JSON logs with rotation (max 10MB, 3 backups, 28 days).
 - No joins or complex queries; only single collection operations.
 - Authentication required for all data operations; credentials not modifiable via API.

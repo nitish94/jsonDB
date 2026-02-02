@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 	"regexp"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/sirupsen/logrus"
 	"json-db/storage"
 )
 
@@ -26,7 +26,7 @@ func CreateRecord(c *gin.Context) {
 
 	id, err := storage.AddRecord(collection, data)
 	if err != nil {
-		log.Printf("Error creating record in %s: %v", collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error creating record")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record"})
 		return
 	}
@@ -49,7 +49,7 @@ func GetRecord(c *gin.Context) {
 
 	record, err := storage.FindRecordByID(collection, id)
 	if err != nil {
-		log.Printf("Error getting record %d from %s: %v", id, collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "id": id, "error": err}).Error("Error getting record")
 		c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
 		return
 	}
@@ -77,7 +77,7 @@ func UpdateRecord(c *gin.Context) {
 	}
 
 	if err := storage.UpdateRecord(collection, id, data); err != nil {
-		log.Printf("Error updating record %d in %s: %v", id, collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "id": id, "error": err}).Error("Error updating record")
 		c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
 		return
 	}
@@ -99,7 +99,7 @@ func DeleteRecord(c *gin.Context) {
 	}
 
 	if err := storage.DeleteRecord(collection, id); err != nil {
-		log.Printf("Error deleting record %d from %s: %v", id, collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "id": id, "error": err}).Error("Error deleting record")
 		c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
 		return
 	}
@@ -135,7 +135,7 @@ func ListRecords(c *gin.Context) {
 
 	records, total, pageNum, err := storage.GetRecordsPaginated(collection, limit, page)
 	if err != nil {
-		log.Printf("Error listing records from %s: %v", collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error listing records")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list records"})
 		return
 	}
@@ -163,7 +163,7 @@ func BatchCreateRecord(c *gin.Context) {
 
 	ids, err := storage.BatchAdd(collection, datas)
 	if err != nil {
-		log.Printf("Error batch creating records in %s: %v", collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error batch creating records")
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -200,7 +200,7 @@ func BatchUpdateRecord(c *gin.Context) {
 	}
 
 	if err := storage.BatchUpdate(collection, updateStructs); err != nil {
-		log.Printf("Error batch updating records in %s: %v", collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error batch updating records")
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
@@ -221,7 +221,7 @@ func BatchDeleteRecord(c *gin.Context) {
 	}
 
 	if err := storage.BatchDelete(collection, ids); err != nil {
-		log.Printf("Error batch deleting records in %s: %v", collection, err)
+		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error batch deleting records")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete records"})
 		return
 	}
@@ -256,7 +256,7 @@ func CreateCollection(c *gin.Context) {
 	}
 
 	if err := storage.CreateCollection(req.Name, req.Records); err != nil {
-		log.Printf("Error creating collection %s: %v", req.Name, err)
+		logrus.WithFields(logrus.Fields{"collection": req.Name, "error": err}).Error("Error creating collection")
 		if err.Error() == "collection already exists" {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		} else {
@@ -264,5 +264,46 @@ func CreateCollection(c *gin.Context) {
 		}
 		return
 	}
+	logrus.WithField("collection", req.Name).Info("Collection created")
 	c.JSON(http.StatusCreated, gin.H{"message": "Collection created"})
+}
+
+type RenameCollectionRequest struct {
+	Name string `json:"name" binding:"required"`
+}
+
+func DeleteCollection(c *gin.Context) {
+	collection := c.Param("collection")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+		return
+	}
+
+	if err := storage.DeleteCollection(collection); err != nil {
+		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error deleting collection")
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Collection deleted"})
+}
+
+func RenameCollection(c *gin.Context) {
+	collection := c.Param("collection")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+		return
+	}
+
+	var req RenameCollectionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+		return
+	}
+
+	if err := storage.RenameCollection(collection, req.Name); err != nil {
+		logrus.WithFields(logrus.Fields{"old": collection, "new": req.Name, "error": err}).Error("Error renaming collection")
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Collection renamed"})
 }

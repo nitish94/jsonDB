@@ -9,7 +9,9 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 
+	"github.com/sirupsen/logrus"
 	"json-db/models"
 )
 
@@ -412,4 +414,64 @@ func CreateCollection(name string, initialRecords []map[string]interface{}) erro
 	}
 
 	return SaveCollection(name, records)
+}
+
+// DeleteCollection moves the collection to bin with timestamp
+func DeleteCollection(name string) error {
+	mu := getMutex(name)
+	mu.Lock()
+	defer mu.Unlock()
+
+	filePath := filepath.Join(DataDir, name+".json")
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		return fmt.Errorf("collection not found")
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	binPath := filepath.Join("bin", timestamp+"_"+name+".json")
+	if err := os.Rename(filePath, binPath); err != nil {
+		logrus.WithFields(logrus.Fields{"collection": name, "error": err}).Error("Failed to move collection to bin")
+		return err
+	}
+
+	// Remove from mutex map
+	collectionMutexesMu.Lock()
+	delete(collectionMutexes, name)
+	collectionMutexesMu.Unlock()
+
+	logrus.WithFields(logrus.Fields{"collection": name, "bin_path": binPath}).Info("Collection moved to bin")
+	return nil
+}
+
+// RenameCollection renames the collection file
+func RenameCollection(oldName, newName string) error {
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, newName); !matched {
+		return fmt.Errorf("invalid collection name")
+	}
+
+	mu := getMutex(oldName)
+	mu.Lock()
+	defer mu.Unlock()
+
+	oldPath := filepath.Join(DataDir, oldName+".json")
+	newPath := filepath.Join(DataDir, newName+".json")
+	if _, err := os.Stat(newPath); err == nil {
+		return fmt.Errorf("collection already exists")
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		logrus.WithFields(logrus.Fields{"old": oldName, "new": newName, "error": err}).Error("Failed to rename collection")
+		return err
+	}
+
+	// Update mutex map
+	collectionMutexesMu.Lock()
+	if mu, ok := collectionMutexes[oldName]; ok {
+		delete(collectionMutexes, oldName)
+		collectionMutexes[newName] = mu
+	}
+	collectionMutexesMu.Unlock()
+
+	logrus.WithFields(logrus.Fields{"old": oldName, "new": newName}).Info("Collection renamed")
+	return nil
 }
