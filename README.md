@@ -203,6 +203,7 @@ curl http://localhost:5000/health
 - `USERNAME=admin` - Login username.
 - `PASSWORD=admin` - Login password.
 - `RECORD_LIMIT=1000` - Maximum records per table.
+- `JWT_SECRET=your-secret-key` - Secret key for JWT signing.
 
 ## Working Brief
 
@@ -214,7 +215,7 @@ This API provides a simple JSON-based database system where each table is a JSON
 - JSON files are kept indented for readability.
 - Tables must have valid names (alphanumeric, underscore, dash).
 - Input validation includes table name, ID types, and JSON structure.
-- Thread-safe operations with per-table locking (readers-writer mutex).
+- Thread-safe operations with per-table locking (readers-writer mutex, LRU cached for memory efficiency).
 - Tables are created via POST /tables with initial records.
 - Delete tables: moved to `bin/` with timestamp (e.g., `20231001_120000_users.json`).
 - Rename tables: file renamed, mutex updated.
@@ -224,5 +225,6 @@ This API provides a simple JSON-based database system where each table is a JSON
 - Batch operations are transactional: all succeed or all fail.
 - Rate limiting applied to protected endpoints.
 - Logging: structured JSON logs with rotation (max 10MB, 3 backups, 28 days).
+- Mutex cache: LRU with capacity 1000 to prevent unbounded memory growth.
 - No joins or complex queries; only single table operations.
 - Authentication required for all data operations; credentials not modifiable via API.

@@ -9,7 +9,15 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var jwtSecret = []byte("your-secret-key") // In production, use env
+var jwtSecret []byte
+
+func init() {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "default-secret-key" // fallback
+	}
+	jwtSecret = []byte(secret)
+}
 
 type LoginRequest struct {
 	Username string `json:"username" binding:"required"`

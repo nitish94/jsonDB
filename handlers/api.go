@@ -11,12 +11,21 @@ import (
 	"json-db/storage"
 )
 
+// CollectionValidationMiddleware validates the collection name parameter
+func CollectionValidationMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		collection := c.Param("collection")
+		if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 func CreateRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	var data json.RawMessage
 	if err := c.ShouldBindJSON(&data); err != nil {
@@ -35,10 +44,6 @@ func CreateRecord(c *gin.Context) {
 
 func GetRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
@@ -58,10 +63,6 @@ func GetRecord(c *gin.Context) {
 
 func UpdateRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
@@ -86,10 +87,6 @@ func UpdateRecord(c *gin.Context) {
 
 func DeleteRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	idStr := c.Param("id")
 	id, err := strconv.Atoi(idStr)
@@ -108,10 +105,6 @@ func DeleteRecord(c *gin.Context) {
 
 func ListRecords(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	limitStr := c.Query("limit")
 	pageStr := c.Query("page")
@@ -150,10 +143,6 @@ func ListRecords(c *gin.Context) {
 
 func BatchCreateRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	var datas []json.RawMessage
 	if err := c.ShouldBindJSON(&datas); err != nil {
@@ -177,10 +166,6 @@ type BatchUpdateRequest struct {
 
 func BatchUpdateRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	var updates []BatchUpdateRequest
 	if err := c.ShouldBindJSON(&updates); err != nil {
@@ -209,10 +194,6 @@ func BatchUpdateRecord(c *gin.Context) {
 
 func BatchDeleteRecord(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	var ids []int
 	if err := c.ShouldBindJSON(&ids); err != nil {
@@ -274,10 +255,6 @@ type RenameCollectionRequest struct {
 
 func DeleteCollection(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	if err := storage.DeleteCollection(collection); err != nil {
 		logrus.WithFields(logrus.Fields{"collection": collection, "error": err}).Error("Error deleting collection")
@@ -289,10 +266,6 @@ func DeleteCollection(c *gin.Context) {
 
 func RenameCollection(c *gin.Context) {
 	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
-		return
-	}
 
 	var req RenameCollectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

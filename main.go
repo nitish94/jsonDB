@@ -62,20 +62,20 @@ func main() {
 	{
 		// Table management
 		protected.POST("/tables", handlers.CreateCollection)
-		protected.DELETE("/tables/:collection", handlers.DeleteCollection)
-		protected.PUT("/tables/:collection", handlers.RenameCollection)
+		protected.DELETE("/tables/:collection", handlers.CollectionValidationMiddleware(), handlers.DeleteCollection)
+		protected.PUT("/tables/:collection", handlers.CollectionValidationMiddleware(), handlers.RenameCollection)
 
 		// Single record operations
-		protected.POST("/:collection", handlers.CreateRecord)
-		protected.GET("/:collection/:id", handlers.GetRecord)
-		protected.PUT("/:collection/:id", handlers.UpdateRecord)
-		protected.DELETE("/:collection/:id", handlers.DeleteRecord)
-		protected.GET("/:collection", handlers.ListRecords)
+		protected.POST("/:collection", handlers.CollectionValidationMiddleware(), handlers.CreateRecord)
+		protected.GET("/:collection/:id", handlers.CollectionValidationMiddleware(), handlers.GetRecord)
+		protected.PUT("/:collection/:id", handlers.CollectionValidationMiddleware(), handlers.UpdateRecord)
+		protected.DELETE("/:collection/:id", handlers.CollectionValidationMiddleware(), handlers.DeleteRecord)
+		protected.GET("/:collection", handlers.CollectionValidationMiddleware(), handlers.ListRecords)
 
 		// Batch operations
-		protected.POST("/:collection/batch", handlers.BatchCreateRecord)
-		protected.PUT("/:collection/batch", handlers.BatchUpdateRecord)
-		protected.DELETE("/:collection/batch", handlers.BatchDeleteRecord)
+		protected.POST("/:collection/batch", handlers.CollectionValidationMiddleware(), handlers.BatchCreateRecord)
+		protected.PUT("/:collection/batch", handlers.CollectionValidationMiddleware(), handlers.BatchUpdateRecord)
+		protected.DELETE("/:collection/batch", handlers.CollectionValidationMiddleware(), handlers.BatchDeleteRecord)
 	}
 
 	port := os.Getenv("PORT")

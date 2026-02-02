@@ -11,23 +11,29 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/golang-lru/v2"
 	"github.com/sirupsen/logrus"
 	"json-db/models"
 )
 
 const DataDir = "data"
 
-var collectionMutexes = make(map[string]*sync.RWMutex)
-var collectionMutexesMu sync.Mutex
+var collectionMutexes *lru.Cache[string, *sync.RWMutex]
+
+func init() {
+	var err error
+	collectionMutexes, err = lru.New[string, *sync.RWMutex](1000) // LRU cache with capacity 1000
+	if err != nil {
+		logrus.Fatal("Failed to create mutex cache:", err)
+	}
+}
 
 func getMutex(collection string) *sync.RWMutex {
-	collectionMutexesMu.Lock()
-	defer collectionMutexesMu.Unlock()
-	if mu, ok := collectionMutexes[collection]; ok {
+	if mu, ok := collectionMutexes.Get(collection); ok {
 		return mu
 	}
 	mu := &sync.RWMutex{}
-	collectionMutexes[collection] = mu
+	collectionMutexes.Add(collection, mu)
 	return mu
 }
 
@@ -435,7 +441,10 @@ func CreateCollection(name string, initialRecords []map[string]interface{}) erro
 			nextID++
 		}
 		delete(rec, "id")
-		data, _ := json.Marshal(rec)
+		data, err := json.Marshal(rec)
+		if err != nil {
+			return err
+		}
 		records = append(records, models.Record{ID: id, Data: data})
 	}
 
@@ -460,10 +469,8 @@ func DeleteCollection(name string) error {
 		return err
 	}
 
-	// Remove from mutex map
-	collectionMutexesMu.Lock()
-	delete(collectionMutexes, name)
-	collectionMutexesMu.Unlock()
+	// Remove from mutex cache
+	collectionMutexes.Remove(name)
 
 	logrus.WithFields(logrus.Fields{"collection": name, "bin_path": binPath}).Info("Collection moved to bin")
 	return nil
@@ -490,13 +497,11 @@ func RenameCollection(oldName, newName string) error {
 		return err
 	}
 
-	// Update mutex map
-	collectionMutexesMu.Lock()
-	if mu, ok := collectionMutexes[oldName]; ok {
-		delete(collectionMutexes, oldName)
-		collectionMutexes[newName] = mu
+	// Update mutex cache
+	if mu, ok := collectionMutexes.Get(oldName); ok {
+		collectionMutexes.Remove(oldName)
+		collectionMutexes.Add(newName, mu)
 	}
-	collectionMutexesMu.Unlock()
 
 	logrus.WithFields(logrus.Fields{"old": oldName, "new": newName}).Info("Collection renamed")
 	return nil
