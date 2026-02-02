@@ -6,15 +6,21 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"json-db/storage"
 )
 
 func CreateRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -24,19 +30,28 @@ func CreateRecord(c *gin.Context) {
 		return
 	}
 
-	id, err := storage.AddRecord(collection, data)
+	id, err := storage.AddRecord(db, table, data)
 	if err != nil {
-		log.Printf("Error creating record in %s: %v", collection, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record"})
+		log.Printf("Error creating record in %s/%s: %v", db, table, err)
+		if strings.Contains(err.Error(), "limit") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create record"})
+		}
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"id": id})
 }
 
 func GetRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -47,19 +62,28 @@ func GetRecord(c *gin.Context) {
 		return
 	}
 
-	record, err := storage.FindRecordByID(collection, id)
+	record, err := storage.FindRecordByID(db, table, id)
 	if err != nil {
-		log.Printf("Error getting record %d from %s: %v", id, collection, err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
+		log.Printf("Error getting record %d from %s/%s: %v", id, db, table, err)
+		if err.Error() == "database corrupted" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
+		}
 		return
 	}
 	c.JSON(http.StatusOK, record)
 }
 
 func UpdateRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -76,8 +100,8 @@ func UpdateRecord(c *gin.Context) {
 		return
 	}
 
-	if err := storage.UpdateRecord(collection, id, data); err != nil {
-		log.Printf("Error updating record %d in %s: %v", id, collection, err)
+	if err := storage.UpdateRecord(db, table, id, data); err != nil {
+		log.Printf("Error updating record %d in %s/%s: %v", id, db, table, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
 		return
 	}
@@ -85,9 +109,14 @@ func UpdateRecord(c *gin.Context) {
 }
 
 func DeleteRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -98,8 +127,8 @@ func DeleteRecord(c *gin.Context) {
 		return
 	}
 
-	if err := storage.DeleteRecord(collection, id); err != nil {
-		log.Printf("Error deleting record %d from %s: %v", id, collection, err)
+	if err := storage.DeleteRecord(db, table, id); err != nil {
+		log.Printf("Error deleting record %d from %s/%s: %v", id, db, table, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Record not found"})
 		return
 	}
@@ -107,9 +136,14 @@ func DeleteRecord(c *gin.Context) {
 }
 
 func ListRecords(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -133,10 +167,14 @@ func ListRecords(c *gin.Context) {
 		}
 	}
 
-	records, total, pageNum, err := storage.GetRecordsPaginated(collection, limit, page)
+	records, total, pageNum, err := storage.GetRecordsPaginated(db, table, limit, page)
 	if err != nil {
-		log.Printf("Error listing records from %s: %v", collection, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list records"})
+		log.Printf("Error listing records from %s/%s: %v", db, table, err)
+		if err.Error() == "database corrupted" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list records"})
+		}
 		return
 	}
 
@@ -149,9 +187,14 @@ func ListRecords(c *gin.Context) {
 }
 
 func BatchCreateRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -161,10 +204,14 @@ func BatchCreateRecord(c *gin.Context) {
 		return
 	}
 
-	ids, err := storage.BatchAdd(collection, datas)
+	ids, err := storage.BatchAdd(db, table, datas)
 	if err != nil {
-		log.Printf("Error batch creating records in %s: %v", collection, err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Printf("Error batch creating records in %s/%s: %v", db, table, err)
+		if strings.Contains(err.Error(), "limit") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create records"})
+		}
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"ids": ids})
@@ -176,9 +223,14 @@ type BatchUpdateRequest struct {
 }
 
 func BatchUpdateRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -199,8 +251,8 @@ func BatchUpdateRecord(c *gin.Context) {
 		}{ID: u.ID, Data: u.Data}
 	}
 
-	if err := storage.BatchUpdate(collection, updateStructs); err != nil {
-		log.Printf("Error batch updating records in %s: %v", collection, err)
+	if err := storage.BatchUpdate(db, table, updateStructs); err != nil {
+		log.Printf("Error batch updating records in %s/%s: %v", db, table, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
@@ -208,9 +260,14 @@ func BatchUpdateRecord(c *gin.Context) {
 }
 
 func BatchDeleteRecord(c *gin.Context) {
-	collection := c.Param("collection")
-	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+	db := c.Param("db")
+	table := c.Param("table")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, table); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid table name"})
 		return
 	}
 
@@ -220,21 +277,27 @@ func BatchDeleteRecord(c *gin.Context) {
 		return
 	}
 
-	if err := storage.BatchDelete(collection, ids); err != nil {
-		log.Printf("Error batch deleting records in %s: %v", collection, err)
+	if err := storage.BatchDelete(db, table, ids); err != nil {
+		log.Printf("Error batch deleting records in %s/%s: %v", db, table, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete records"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Records deleted"})
 }
 
-type CreateCollectionRequest struct {
+type CreateTableRequest struct {
 	Name    string                   `json:"name" binding:"required"`
 	Records []map[string]interface{} `json:"records" binding:"required"`
 }
 
-func CreateCollection(c *gin.Context) {
-	var req CreateCollectionRequest
+func CreateTable(c *gin.Context) {
+	db := c.Param("db")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+
+	var req CreateTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
 		return
@@ -255,14 +318,40 @@ func CreateCollection(c *gin.Context) {
 		}
 	}
 
-	if err := storage.CreateCollection(req.Name, req.Records); err != nil {
-		log.Printf("Error creating collection %s: %v", req.Name, err)
-		if err.Error() == "collection already exists" {
+	if err := storage.CreateTable(db, req.Name, req.Records); err != nil {
+		log.Printf("Error creating table %s in %s: %v", req.Name, db, err)
+		if err.Error() == "table already exists" {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		}
 		return
 	}
-	c.JSON(http.StatusCreated, gin.H{"message": "Collection created"})
+	c.JSON(http.StatusCreated, gin.H{"message": "Table created"})
+}
+
+func ListDBs(c *gin.Context) {
+	dbs, err := storage.ListDBs()
+	if err != nil {
+		log.Printf("Error listing databases: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to list databases"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"databases": dbs})
+}
+
+func ListTables(c *gin.Context) {
+	db := c.Param("db")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, db); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid database name"})
+		return
+	}
+
+	tables, err := storage.ListTables(db)
+	if err != nil {
+		log.Printf("Error listing tables in %s: %v", db, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Database not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"tables": tables})
 }

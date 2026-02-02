@@ -48,20 +48,22 @@ func main() {
 	protected.Use(handlers.AuthMiddleware())
 	protected.Use(tollbooth_gin.LimitHandler(limiter))
 	{
-		// Collection management
-		protected.POST("/collections", handlers.CreateCollection)
+		// Database and table management
+		protected.GET("/dbs", handlers.ListDBs)
+		protected.GET("/:db/tables", handlers.ListTables)
+		protected.POST("/:db/tables", handlers.CreateTable)
 
 		// Single record operations
-		protected.POST("/:collection", handlers.CreateRecord)
-		protected.GET("/:collection/:id", handlers.GetRecord)
-		protected.PUT("/:collection/:id", handlers.UpdateRecord)
-		protected.DELETE("/:collection/:id", handlers.DeleteRecord)
-		protected.GET("/:collection", handlers.ListRecords)
+		protected.POST("/:db/:table", handlers.CreateRecord)
+		protected.GET("/:db/:table/:id", handlers.GetRecord)
+		protected.PUT("/:db/:table/:id", handlers.UpdateRecord)
+		protected.DELETE("/:db/:table/:id", handlers.DeleteRecord)
+		protected.GET("/:db/:table", handlers.ListRecords)
 
 		// Batch operations
-		protected.POST("/:collection/batch", handlers.BatchCreateRecord)
-		protected.PUT("/:collection/batch", handlers.BatchUpdateRecord)
-		protected.DELETE("/:collection/batch", handlers.BatchDeleteRecord)
+		protected.POST("/:db/:table/batch", handlers.BatchCreateRecord)
+		protected.PUT("/:db/:table/batch", handlers.BatchUpdateRecord)
+		protected.DELETE("/:db/:table/batch", handlers.BatchDeleteRecord)
 	}
 
 	port := os.Getenv("PORT")

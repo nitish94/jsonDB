@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 
 	"json-db/models"
@@ -15,17 +16,18 @@ import (
 
 const DataDir = "data"
 
-var collectionMutexes = make(map[string]*sync.RWMutex)
-var collectionMutexesMu sync.Mutex
+var tableMutexes = make(map[string]*sync.RWMutex) // key: db/table
+var tableMutexesMu sync.Mutex
 
-func getMutex(collection string) *sync.RWMutex {
-	collectionMutexesMu.Lock()
-	defer collectionMutexesMu.Unlock()
-	if mu, ok := collectionMutexes[collection]; ok {
+func getMutex(db, table string) *sync.RWMutex {
+	key := db + "/" + table
+	tableMutexesMu.Lock()
+	defer tableMutexesMu.Unlock()
+	if mu, ok := tableMutexes[key]; ok {
 		return mu
 	}
 	mu := &sync.RWMutex{}
-	collectionMutexes[collection] = mu
+	tableMutexes[key] = mu
 	return mu
 }
 
@@ -35,8 +37,15 @@ func EnsureDataDir() error {
 }
 
 // LoadCollection loads all records from a JSON file
-func LoadCollection(name string) ([]models.Record, error) {
-	filePath := filepath.Join(DataDir, name+".json")
+func LoadCollection(db, table string) ([]models.Record, error) {
+	filePath := filepath.Join(DataDir, db, table+".json")
+	corruptPath := filepath.Join(DataDir, db, "corrupt_"+table+".json")
+
+	// Check if corrupt file exists
+	if _, err := os.Stat(corruptPath); err == nil {
+		return nil, fmt.Errorf("database corrupted")
+	}
+
 	file, err := os.Open(filePath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -48,23 +57,44 @@ func LoadCollection(name string) ([]models.Record, error) {
 
 	var records []models.Record
 	if err := json.NewDecoder(file).Decode(&records); err != nil {
-		return nil, err
+		// Rename to corrupt
+		os.Rename(filePath, corruptPath)
+		return nil, fmt.Errorf("database corrupted")
 	}
 	return records, nil
 }
 
-// SaveCollection saves all records to a JSON file with indentation, atomically
-func SaveCollection(name string, records []models.Record) error {
-	filePath := filepath.Join(DataDir, name+".json")
-	backupPath := filePath + ".bak"
-	tempPath := filePath + ".tmp"
+// SaveCollection saves all records to a JSON file with indentation, atomically with backup rotation
+func SaveCollection(db, table string, records []models.Record) error {
+	filePath := filepath.Join(DataDir, db, table+".json")
+	backupDir := filepath.Join(DataDir, db, "backups")
+	os.MkdirAll(backupDir, 0755)
 
-	// Create backup if file exists
+	backupCountStr := os.Getenv("BACKUP_COUNT")
+	backupCount := 3
+	if bc, err := strconv.Atoi(backupCountStr); err == nil {
+		backupCount = bc
+	}
+
+	// Rotate backups
+	for i := backupCount - 1; i >= 1; i-- {
+		old := filepath.Join(backupDir, table+".bak"+strconv.Itoa(i))
+		new := filepath.Join(backupDir, table+".bak"+strconv.Itoa(i+1))
+		if i == backupCount-1 {
+			os.Remove(new)
+		}
+		os.Rename(old, new)
+	}
+
+	// Create .bak1 if file exists
 	if _, err := os.Stat(filePath); err == nil {
-		if err := copyFile(filePath, backupPath); err != nil {
+		bak1 := filepath.Join(backupDir, table+".bak1")
+		if err := copyFile(filePath, bak1); err != nil {
 			return err
 		}
 	}
+
+	tempPath := filePath + ".tmp"
 
 	// Write to temp file
 	tempFile, err := os.Create(tempPath)
@@ -107,13 +137,13 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-// FindRecordByID finds a record by ID in a collection
-func FindRecordByID(collection string, id int) (*models.Record, error) {
-	mu := getMutex(collection)
+// FindRecordByID finds a record by ID in a table
+func FindRecordByID(db, table string, id int) (*models.Record, error) {
+	mu := getMutex(db, table)
 	mu.RLock()
 	defer mu.RUnlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +156,12 @@ func FindRecordByID(collection string, id int) (*models.Record, error) {
 }
 
 // AddRecord adds a new record with auto-generated ID
-func AddRecord(collection string, data json.RawMessage) (int, error) {
-	mu := getMutex(collection)
+func AddRecord(db, table string, data json.RawMessage) (int, error) {
+	mu := getMutex(db, table)
 	mu.Lock()
 	defer mu.Unlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return 0, err
 	}
@@ -161,19 +191,19 @@ func AddRecord(collection string, data json.RawMessage) (int, error) {
 	}
 	records = append(records, newRecord)
 
-	if err := SaveCollection(collection, records); err != nil {
+	if err := SaveCollection(db, table, records); err != nil {
 		return 0, err
 	}
 	return newID, nil
 }
 
 // UpdateRecord updates a record by ID
-func UpdateRecord(collection string, id int, data json.RawMessage) error {
-	mu := getMutex(collection)
+func UpdateRecord(db, table string, id int, data json.RawMessage) error {
+	mu := getMutex(db, table)
 	mu.Lock()
 	defer mu.Unlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return err
 	}
@@ -181,19 +211,19 @@ func UpdateRecord(collection string, id int, data json.RawMessage) error {
 	for i, record := range records {
 		if record.ID == id {
 			records[i].Data = data
-			return SaveCollection(collection, records)
+			return SaveCollection(db, table, records)
 		}
 	}
 	return fmt.Errorf("record not found")
 }
 
 // DeleteRecord deletes a record by ID
-func DeleteRecord(collection string, id int) error {
-	mu := getMutex(collection)
+func DeleteRecord(db, table string, id int) error {
+	mu := getMutex(db, table)
 	mu.Lock()
 	defer mu.Unlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return err
 	}
@@ -201,15 +231,15 @@ func DeleteRecord(collection string, id int) error {
 	for i, record := range records {
 		if record.ID == id {
 			records = append(records[:i], records[i+1:]...)
-			return SaveCollection(collection, records)
+			return SaveCollection(db, table, records)
 		}
 	}
 	return fmt.Errorf("record not found")
 }
 
 // GetRecordsPaginated gets paginated records, sorted by ID desc (latest first)
-func GetRecordsPaginated(collection string, limit int, page int) ([]models.Record, int, int, error) {
-	mu := getMutex(collection)
+func GetRecordsPaginated(db, table string, limit int, page int) ([]models.Record, int, int, error) {
+	mu := getMutex(db, table)
 	mu.RLock()
 	defer mu.RUnlock()
 
@@ -224,7 +254,7 @@ func GetRecordsPaginated(collection string, limit int, page int) ([]models.Recor
 		maxLimit = ml
 	}
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return nil, 0, 0, err
 	}
@@ -260,12 +290,12 @@ func GetRecordsPaginated(collection string, limit int, page int) ([]models.Recor
 }
 
 // BatchAdd adds multiple records atomically
-func BatchAdd(collection string, datas []json.RawMessage) ([]int, error) {
-	mu := getMutex(collection)
+func BatchAdd(db, table string, datas []json.RawMessage) ([]int, error) {
+	mu := getMutex(db, table)
 	mu.Lock()
 	defer mu.Unlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return nil, err
 	}
@@ -293,22 +323,22 @@ func BatchAdd(collection string, datas []json.RawMessage) ([]int, error) {
 		records = append(records, models.Record{ID: maxID, Data: data})
 	}
 
-	if err := SaveCollection(collection, records); err != nil {
+	if err := SaveCollection(db, table, records); err != nil {
 		return nil, err
 	}
 	return ids, nil
 }
 
 // BatchUpdate updates multiple records atomically
-func BatchUpdate(collection string, updates []struct {
+func BatchUpdate(db, table string, updates []struct {
 	ID   int
 	Data json.RawMessage
 }) error {
-	mu := getMutex(collection)
+	mu := getMutex(db, table)
 	mu.Lock()
 	defer mu.Unlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return err
 	}
@@ -326,16 +356,16 @@ func BatchUpdate(collection string, updates []struct {
 		}
 	}
 
-	return SaveCollection(collection, records)
+	return SaveCollection(db, table, records)
 }
 
 // BatchDelete deletes multiple records atomically
-func BatchDelete(collection string, ids []int) error {
-	mu := getMutex(collection)
+func BatchDelete(db, table string, ids []int) error {
+	mu := getMutex(db, table)
 	mu.Lock()
 	defer mu.Unlock()
 
-	records, err := LoadCollection(collection)
+	records, err := LoadCollection(db, table)
 	if err != nil {
 		return err
 	}
@@ -352,23 +382,29 @@ func BatchDelete(collection string, ids []int) error {
 		}
 	}
 
-	return SaveCollection(collection, newRecords)
+	return SaveCollection(db, table, newRecords)
 }
 
-// CreateCollection creates a new collection with initial records
-func CreateCollection(name string, initialRecords []map[string]interface{}) error {
+// CreateTable creates a new table with initial records
+func CreateTable(db, name string, initialRecords []map[string]interface{}) error {
 	// Validate name
 	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, name); !matched {
-		return fmt.Errorf("invalid collection name: must be alphanumeric, underscore, or dash")
+		return fmt.Errorf("invalid table name: must be alphanumeric, underscore, or dash")
 	}
 
-	mu := getMutex(name)
+	mu := getMutex(db, name)
 	mu.Lock()
 	defer mu.Unlock()
 
-	filePath := filepath.Join(DataDir, name+".json")
+	// Ensure db dir exists
+	dbDir := filepath.Join(DataDir, db)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return err
+	}
+
+	filePath := filepath.Join(dbDir, name+".json")
 	if _, err := os.Stat(filePath); err == nil {
-		return fmt.Errorf("collection already exists")
+		return fmt.Errorf("table already exists")
 	}
 
 	if len(initialRecords) == 0 {
@@ -411,5 +447,40 @@ func CreateCollection(name string, initialRecords []map[string]interface{}) erro
 		records = append(records, models.Record{ID: id, Data: data})
 	}
 
-	return SaveCollection(name, records)
+	return SaveCollection(db, name, records)
+}
+
+// ListDBs lists all databases (folders in data/)
+func ListDBs() ([]string, error) {
+	entries, err := os.ReadDir(DataDir)
+	if err != nil {
+		return nil, err
+	}
+	var dbs []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dbs = append(dbs, entry.Name())
+		}
+	}
+	return dbs, nil
+}
+
+// ListTables lists all tables (json files) in a db
+func ListTables(db string) ([]string, error) {
+	dbDir := filepath.Join(DataDir, db)
+	entries, err := os.ReadDir(dbDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("database not found")
+		}
+		return nil, err
+	}
+	var tables []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".json") && !strings.HasPrefix(entry.Name(), "corrupt_") {
+			name := strings.TrimSuffix(entry.Name(), ".json")
+			tables = append(tables, name)
+		}
+	}
+	return tables, nil
 }

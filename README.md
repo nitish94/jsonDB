@@ -1,18 +1,25 @@
 # JSON Database System
 
-A simple REST API-based database system using JSON files as collections. Built with Golang and Gin.
+A hierarchical REST API-based database system using JSON files as tables within databases. Built with Golang and Gin.
+
+## Data Structure
+
+- **Databases**: Folders in `data/` (e.g., `data/demo/`)
+- **Tables**: JSON files within database folders (e.g., `data/demo/users.json`)
+- Each table is a JSON array of objects with auto-generated integer IDs.
+- No cross-table queries or joins.
 
 ## Features
 
 - JWT-based authentication for API access.
 - CRUD operations (Create, Read, Update, Delete) for JSON records.
 - Batch operations for efficient bulk data handling.
-- Each JSON file acts as a separate collection/database with record limits.
 - Automatic ID generation (incremental integers).
 - Pagination for listing records.
-- Hard limits on number of records per collection to prevent memory issues.
-- Atomic writes with backup system for data integrity.
+- Hard limits on number of records per table to prevent memory issues.
+- Atomic writes with rotating backup system for data integrity.
 - Transactional batch operations (all-or-nothing).
+- Corruption detection and handling (renames corrupt files).
 - Rate limiting (10 requests/second) to prevent abuse.
 - Proper logging and error handling.
 - Configurable settings via .env file.
@@ -31,20 +38,22 @@ A simple REST API-based database system using JSON files as collections. Built w
 - `POST /login` - Login to get JWT token. Body: `{"username": "admin", "password": "admin"}`.
 
 ### Protected Endpoints (Require JWT)
-#### Collection Management
-- `POST /collections` - Create a new collection. Body: `{"name": "collection_name", "records": [{"key": "value", ...}, ...]}`. At least one record required. IDs auto-assigned if not provided, must be unique integers.
+#### Database Management
+- `GET /dbs` - List all databases.
+- `GET /:db/tables` - List all tables in a database.
+- `POST /:db/tables` - Create a new table. Body: `{"name": "table_name", "records": [{"key": "value", ...}, ...]}`. At least one record required. IDs auto-assigned if not provided, must be unique integers.
 
 #### Record Operations
-- `POST /:collection` - Create a new record. Body: JSON object without "id". Limited by RECORD_LIMIT.
-- `GET /:collection/:id` - Retrieve a record by ID.
-- `PUT /:collection/:id` - Update a record by ID. Body: JSON object without "id".
-- `DELETE /:collection/:id` - Delete a record by ID.
-- `GET /:collection?limit=25&page=1` - List records with pagination. Defaults from .env: DEFAULT_LIMIT=25, MAX_LIMIT=50, page=1. Returns latest records first (sorted by ID desc).
+- `POST /:db/:table` - Create a new record. Body: JSON object without "id". Limited by RECORD_LIMIT.
+- `GET /:db/:table/:id` - Retrieve a record by ID.
+- `PUT /:db/:table/:id` - Update a record by ID. Body: JSON object without "id".
+- `DELETE /:db/:table/:id` - Delete a record by ID.
+- `GET /:db/:table?limit=25&page=1` - List records with pagination. Defaults from .env: DEFAULT_LIMIT=25, MAX_LIMIT=50, page=1. Returns latest records first (sorted by ID desc).
 
 #### Batch Operations (Transactional)
-- `POST /:collection/batch` - Create multiple records. Body: Array of JSON objects. Returns array of IDs.
-- `PUT /:collection/batch` - Update multiple records. Body: Array of `{"id": int, "data": object}`.
-- `DELETE /:collection/batch` - Delete multiple records. Body: Array of IDs.
+- `POST /:db/:table/batch` - Create multiple records. Body: Array of JSON objects. Returns array of IDs.
+- `PUT /:db/:table/batch` - Update multiple records. Body: Array of `{"id": int, "data": object}`.
+- `DELETE /:db/:table/batch` - Delete multiple records. Body: Array of IDs.
 
 ## Project Structure
 
@@ -63,12 +72,10 @@ A simple REST API-based database system using JSON files as collections. Built w
 ## Example Usage
 
 ### Login
-```
-POST /login
-{
-  "username": "admin",
-  "password": "admin"
-}
+```bash
+curl -X POST http://localhost:5000/login \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "admin"}'
 ```
 
 Response:
@@ -80,85 +87,112 @@ Response:
 
 Use this token in `Authorization: Bearer <token>` for subsequent requests.
 
-### Create Collection
-```
-POST /collections
-Authorization: Bearer <token>
-{
-  "name": "newcollection",
-  "records": [
-    {"name": "Item1", "value": 100},
-    {"id": 5, "name": "Item2", "value": 200}
-  ]
-}
-```
-
-### Create Record
-```
-POST /users
-Authorization: Bearer <token>
-{
-  "name": "David",
-  "email": "david@example.com",
-  "age": 28
-}
+### List Databases
+```bash
+curl -X GET http://localhost:5000/dbs \
+  -H "Authorization: Bearer <token>"
 ```
 
 Response:
 ```json
 {
-  "id": 4
+  "databases": ["demo"]
+}
+```
+
+### List Tables in Database
+```bash
+curl -X GET http://localhost:5000/demo/tables \
+  -H "Authorization: Bearer <token>"
+```
+
+Response:
+```json
+{
+  "tables": ["users", "logs"]
+}
+```
+
+### Create Table
+```bash
+curl -X POST http://localhost:5000/demo/tables \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "products",
+    "records": [
+      {"name": "Laptop", "price": 999},
+      {"name": "Book", "price": 19}
+    ]
+  }'
+```
+
+### Create Record
+```bash
+curl -X POST http://localhost:5000/demo/users \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "David", "email": "david@example.com", "age": 28}'
+```
+
+Response:
+```json
+{
+  "id": 3
 }
 ```
 
 ### List Records
-```
-GET /users
-Authorization: Bearer <token>
+```bash
+curl -X GET "http://localhost:5000/demo/users?limit=10" \
+  -H "Authorization: Bearer <token>"
 ```
 
 Response:
 ```json
 {
   "records": [...],
-  "total": 4,
+  "total": 3,
   "page": 1,
-  "limit": 25
+  "limit": 10
 }
 ```
 
 ### Batch Create Records
-```
-POST /users/batch
-Authorization: Bearer <token>
-[
-  {"name": "Eve", "email": "eve@example.com"},
-  {"name": "Frank", "email": "frank@example.com"}
-]
+```bash
+curl -X POST http://localhost:5000/demo/users/batch \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"name": "Eve", "email": "eve@example.com"},
+    {"name": "Frank", "email": "frank@example.com"}
+  ]'
 ```
 
 Response:
 ```json
 {
-  "ids": [5, 6]
+  "ids": [4, 5]
 }
 ```
 
 ### Batch Update Records
-```
-PUT /users/batch
-Authorization: Bearer <token>
-[
-  {"id": 1, "data": {"name": "Alice Updated"}},
-  {"id": 2, "data": {"name": "Bob Updated"}}
-]
+```bash
+curl -X PUT http://localhost:5000/demo/users/batch \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {"id": 1, "data": {"name": "Alice Updated"}},
+    {"id": 2, "data": {"name": "Bob Updated"}}
+  ]'
 ```
 
 ### Batch Delete Records
-```
-DELETE /users/batch
-Authorization: Bearer <token>
-[3, 4]
+```bash
+curl -X DELETE http://localhost:5000/demo/users/batch \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '[3, 4]'
 ```
 
 ## Configuration (.env)
@@ -168,19 +202,21 @@ Authorization: Bearer <token>
 - `MAX_LIMIT=50` - Maximum pagination limit.
 - `USERNAME=admin` - Login username.
 - `PASSWORD=admin` - Login password.
-- `RECORD_LIMIT=1000` - Maximum records per collection.
+- `RECORD_LIMIT=1000` - Maximum records per table.
+- `BACKUP_COUNT=3` - Number of backup files to keep per table.
 
 ## Notes
 
 - IDs are auto-generated as incremental integers.
 - JSON files are kept indented for readability.
-- Collections must have valid names (alphanumeric, underscore, dash).
-- Input validation includes collection name, ID types, and JSON structure.
-- Thread-safe operations with per-collection locking (readers-writer mutex).
-- Collections are created via POST /collections with initial records.
-- Hard limit on records per collection to prevent memory issues.
-- Atomic writes: data is written to temp file, then renamed; backups created before changes.
+- Databases and tables must have valid names (alphanumeric, underscore, dash).
+- Input validation includes names, ID types, and JSON structure.
+- Thread-safe operations with per-table locking (readers-writer mutex).
+- Tables are created via POST /:db/tables with initial records.
+- Hard limit on records per table to prevent memory issues.
+- Atomic writes: data is written to temp file, then renamed; rotating backups created before changes.
+- Corruption handling: invalid JSON files are renamed to `corrupt_*` and reported.
 - Batch operations are transactional: all succeed or all fail.
 - Rate limiting applied to protected endpoints.
-- No joins or complex queries; only single collection operations.
+- No joins or complex queries; only single table operations.
 - Authentication required for all data operations; credentials not modifiable via API.
