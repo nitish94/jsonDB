@@ -1,0 +1,21 @@
+[
+  {
+    "id": 1,
+    "level": "info",
+    "message": "System started",
+    "timestamp": "2023-10-01T00:00:00Z"
+  },
+  {
+    "id": 2,
+    "level": "error",
+    "message": "Failed to connect to database",
+    "timestamp": "2023-10-01T00:05:00Z"
+  },
+  {
+    "id": 3,
+    "level": "info",
+    "message": "User logged in",
+    "timestamp": "2023-10-01T00:10:00Z",
+    "user_id": 1
+  }
+]
