@@ -50,8 +50,34 @@ func LoadCollection(name string) ([]models.Record, error) {
 
 	var records []models.Record
 	if err := json.NewDecoder(file).Decode(&records); err != nil {
-		return nil, err
+		// Move to corrupt
+		corruptPath := filepath.Join("corrupt", "corrupt_"+name+".json")
+		file.Close()
+		if moveErr := os.Rename(filePath, corruptPath); moveErr != nil {
+			logrus.WithFields(logrus.Fields{"collection": name, "error": moveErr}).Error("Failed to move corrupted file")
+			return nil, fmt.Errorf("file corrupted and failed to move")
+		}
+		logrus.WithFields(logrus.Fields{"collection": name, "corrupt_path": corruptPath}).Warn("Corrupted file moved")
+		return nil, fmt.Errorf("file corrupted, moved to corrupt")
 	}
+
+	// Check for duplicate IDs
+	idMap := make(map[int]bool)
+	for _, r := range records {
+		if idMap[r.ID] {
+			// Move to corrupt
+			file.Close()
+			corruptPath := filepath.Join("corrupt", "corrupt_"+name+".json")
+			if moveErr := os.Rename(filePath, corruptPath); moveErr != nil {
+				logrus.WithFields(logrus.Fields{"collection": name, "error": moveErr}).Error("Failed to move file with duplicate IDs")
+				return nil, fmt.Errorf("duplicate IDs and failed to move")
+			}
+			logrus.WithFields(logrus.Fields{"collection": name, "corrupt_path": corruptPath}).Warn("File with duplicate IDs moved to corrupt")
+			return nil, fmt.Errorf("duplicate IDs, moved to corrupt")
+		}
+		idMap[r.ID] = true
+	}
+
 	return records, nil
 }
 

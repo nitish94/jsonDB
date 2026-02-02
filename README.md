@@ -7,12 +7,13 @@ A simple REST API-based database system using JSON files as collections. Built w
 - JWT-based authentication for API access.
 - CRUD operations (Create, Read, Update, Delete) for JSON records.
 - Batch operations for efficient bulk data handling.
-- Collection management: create, delete (archive), rename.
-- Each JSON file acts as a separate collection/database with record limits.
+- Table management: create, delete (archive to bin/), rename.
+- Each JSON file acts as a separate table with record limits.
 - Automatic ID generation (incremental integers).
 - Pagination for listing records.
-- Hard limits on number of records per collection to prevent memory issues.
+- Hard limits on number of records per table to prevent memory issues.
 - Atomic writes with backup system for data integrity.
+- Corruption detection: invalid JSON or duplicate IDs move files to `corrupt/` folder.
 - Transactional batch operations (all-or-nothing).
 - Rate limiting (10 requests/second) to prevent abuse.
 - Structured logging with file rotation.
@@ -33,10 +34,10 @@ A simple REST API-based database system using JSON files as collections. Built w
 - `POST /login` - Login to get JWT token. Body: `{"username": "admin", "password": "admin"}`.
 
 ### Protected Endpoints (Require JWT)
-#### Collection Management
-- `POST /collections` - Create a new collection. Body: `{"name": "collection_name", "records": [{"key": "value", ...}, ...]}`. At least one record required. IDs auto-assigned if not provided, must be unique integers.
-- `DELETE /collections/:collection` - Delete (archive) a collection. Moves to `bin/` with timestamp.
-- `PUT /collections/:collection` - Rename a collection. Body: `{"name": "new_name"}`.
+#### Table Management
+- `POST /tables` - Create a new table (JSON file). Body: `{"name": "table_name", "records": [{"key": "value", ...}, ...]}`. At least one record required. IDs auto-assigned if not provided, must be unique integers.
+- `DELETE /tables/:table` - Delete (archive) a table. Moves to `bin/` with timestamp.
+- `PUT /tables/:table` - Rename a table. Body: `{"name": "new_name"}`.
 
 #### Record Operations
 - `POST /:collection` - Create a new record. Body: JSON object without "id". Limited by RECORD_LIMIT.
@@ -84,12 +85,12 @@ Response:
 
 Use this token in `Authorization: Bearer <token>` for subsequent requests.
 
-### Create Collection
+### Create Table
 ```
-POST /collections
+POST /tables
 Authorization: Bearer <token>
 {
-  "name": "newcollection",
+  "name": "newtable",
   "records": [
     {"name": "Item1", "value": 100},
     {"id": 5, "name": "Item2", "value": 200}
@@ -97,15 +98,15 @@ Authorization: Bearer <token>
 }
 ```
 
-### Delete Collection
+### Delete Table
 ```
-DELETE /collections/users
+DELETE /tables/users
 Authorization: Bearer <token>
 ```
 
-### Rename Collection
+### Rename Table
 ```
-PUT /collections/oldname
+PUT /tables/oldname
 Authorization: Bearer <token>
 {
   "name": "newname"
@@ -180,6 +181,20 @@ Authorization: Bearer <token>
 [3, 4]
 ```
 
+### Additional Examples
+
+# Get a specific record
+curl -H "Authorization: Bearer <token>" http://localhost:5000/users/1
+
+# Update a record
+curl -X PUT -H "Authorization: Bearer <token>" -d '{"name": "Updated Name"}' http://localhost:5000/users/1
+
+# List records with pagination
+curl -H "Authorization: Bearer <token>" "http://localhost:5000/users?limit=10&page=1"
+
+# Health check
+curl http://localhost:5000/health
+
 ## Configuration (.env)
 
 - `PORT=5000` - Server port.
@@ -187,22 +202,27 @@ Authorization: Bearer <token>
 - `MAX_LIMIT=50` - Maximum pagination limit.
 - `USERNAME=admin` - Login username.
 - `PASSWORD=admin` - Login password.
-- `RECORD_LIMIT=1000` - Maximum records per collection.
+- `RECORD_LIMIT=1000` - Maximum records per table.
+
+## Working Brief
+
+This API provides a simple JSON-based database system where each table is a JSON file containing an array of records. Operations are thread-safe with per-table locking, atomic writes for data integrity, and corruption detection (files with invalid JSON or duplicate IDs are moved to `corrupt/` folder). Authentication uses JWT tokens, and rate limiting prevents abuse. Logging captures all operations for monitoring.
 
 ## Notes
 
 - IDs are auto-generated as incremental integers.
 - JSON files are kept indented for readability.
-- Collections must have valid names (alphanumeric, underscore, dash).
-- Input validation includes collection name, ID types, and JSON structure.
-- Thread-safe operations with per-collection locking (readers-writer mutex).
-- Collections are created via POST /collections with initial records.
-- Delete collections: moved to `bin/` with timestamp (e.g., `20231001_120000_users.json`).
-- Rename collections: file renamed, mutex updated.
-- Hard limit on records per collection to prevent memory issues.
+- Tables must have valid names (alphanumeric, underscore, dash).
+- Input validation includes table name, ID types, and JSON structure.
+- Thread-safe operations with per-table locking (readers-writer mutex).
+- Tables are created via POST /tables with initial records.
+- Delete tables: moved to `bin/` with timestamp (e.g., `20231001_120000_users.json`).
+- Rename tables: file renamed, mutex updated.
+- Corrupted tables: moved to `corrupt/` with prefix (e.g., `corrupt_users.json`).
+- Hard limit on records per table to prevent memory issues.
 - Atomic writes: data is written to temp file, then renamed; backups created before changes.
 - Batch operations are transactional: all succeed or all fail.
 - Rate limiting applied to protected endpoints.
 - Logging: structured JSON logs with rotation (max 10MB, 3 backups, 28 days).
-- No joins or complex queries; only single collection operations.
+- No joins or complex queries; only single table operations.
 - Authentication required for all data operations; credentials not modifiable via API.

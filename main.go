@@ -60,10 +60,10 @@ func main() {
 	protected.Use(handlers.AuthMiddleware())
 	protected.Use(tollbooth_gin.LimitHandler(limiter))
 	{
-		// Collection management
-		protected.POST("/collections", handlers.CreateCollection)
-		protected.DELETE("/collections/:collection", handlers.DeleteCollection)
-		protected.PUT("/collections/:collection", handlers.RenameCollection)
+		// Table management
+		protected.POST("/tables", handlers.CreateCollection)
+		protected.DELETE("/tables/:collection", handlers.DeleteCollection)
+		protected.PUT("/tables/:collection", handlers.RenameCollection)
 
 		// Single record operations
 		protected.POST("/:collection", handlers.CreateRecord)
