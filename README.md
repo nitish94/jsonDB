@@ -6,10 +6,14 @@ A simple REST API-based database system using JSON files as collections. Built w
 
 - JWT-based authentication for API access.
 - CRUD operations (Create, Read, Update, Delete) for JSON records.
+- Batch operations for efficient bulk data handling.
 - Each JSON file acts as a separate collection/database with record limits.
 - Automatic ID generation (incremental integers).
 - Pagination for listing records.
 - Hard limits on number of records per collection to prevent memory issues.
+- Atomic writes with backup system for data integrity.
+- Transactional batch operations (all-or-nothing).
+- Rate limiting (10 requests/second) to prevent abuse.
 - Proper logging and error handling.
 - Configurable settings via .env file.
 
@@ -36,6 +40,11 @@ A simple REST API-based database system using JSON files as collections. Built w
 - `PUT /:collection/:id` - Update a record by ID. Body: JSON object without "id".
 - `DELETE /:collection/:id` - Delete a record by ID.
 - `GET /:collection?limit=25&page=1` - List records with pagination. Defaults from .env: DEFAULT_LIMIT=25, MAX_LIMIT=50, page=1. Returns latest records first (sorted by ID desc).
+
+#### Batch Operations (Transactional)
+- `POST /:collection/batch` - Create multiple records. Body: Array of JSON objects. Returns array of IDs.
+- `PUT /:collection/batch` - Update multiple records. Body: Array of `{"id": int, "data": object}`.
+- `DELETE /:collection/batch` - Delete multiple records. Body: Array of IDs.
 
 ## Project Structure
 
@@ -118,6 +127,40 @@ Response:
 }
 ```
 
+### Batch Create Records
+```
+POST /users/batch
+Authorization: Bearer <token>
+[
+  {"name": "Eve", "email": "eve@example.com"},
+  {"name": "Frank", "email": "frank@example.com"}
+]
+```
+
+Response:
+```json
+{
+  "ids": [5, 6]
+}
+```
+
+### Batch Update Records
+```
+PUT /users/batch
+Authorization: Bearer <token>
+[
+  {"id": 1, "data": {"name": "Alice Updated"}},
+  {"id": 2, "data": {"name": "Bob Updated"}}
+]
+```
+
+### Batch Delete Records
+```
+DELETE /users/batch
+Authorization: Bearer <token>
+[3, 4]
+```
+
 ## Configuration (.env)
 
 - `PORT=5000` - Server port.
@@ -136,5 +179,8 @@ Response:
 - Thread-safe operations with per-collection locking (readers-writer mutex).
 - Collections are created via POST /collections with initial records.
 - Hard limit on records per collection to prevent memory issues.
+- Atomic writes: data is written to temp file, then renamed; backups created before changes.
+- Batch operations are transactional: all succeed or all fail.
+- Rate limiting applied to protected endpoints.
 - No joins or complex queries; only single collection operations.
 - Authentication required for all data operations; credentials not modifiable via API.

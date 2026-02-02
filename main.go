@@ -3,7 +3,11 @@ package main
 import (
 	"log"
 	"os"
+	"time"
 
+	"github.com/didip/tollbooth/v7"
+	"github.com/didip/tollbooth/v7/limiter"
+	"github.com/didip/tollbooth_gin"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"json-db/handlers"
@@ -36,19 +40,28 @@ func main() {
 	})
 	r.POST("/login", handlers.Login)
 
+	// Rate limiter: 10 requests per second
+	limiter := tollbooth.NewLimiter(10, &limiter.ExpirableOptions{DefaultExpirationTTL: time.Hour})
+
 	// Protected endpoints
 	protected := r.Group("/")
 	protected.Use(handlers.AuthMiddleware())
+	protected.Use(tollbooth_gin.LimitHandler(limiter))
 	{
 		// Collection management
 		protected.POST("/collections", handlers.CreateCollection)
 
-		// Record operations
+		// Single record operations
 		protected.POST("/:collection", handlers.CreateRecord)
 		protected.GET("/:collection/:id", handlers.GetRecord)
 		protected.PUT("/:collection/:id", handlers.UpdateRecord)
 		protected.DELETE("/:collection/:id", handlers.DeleteRecord)
 		protected.GET("/:collection", handlers.ListRecords)
+
+		// Batch operations
+		protected.POST("/:collection/batch", handlers.BatchCreateRecord)
+		protected.PUT("/:collection/batch", handlers.BatchUpdateRecord)
+		protected.DELETE("/:collection/batch", handlers.BatchDeleteRecord)
 	}
 
 	port := os.Getenv("PORT")

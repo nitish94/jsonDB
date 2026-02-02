@@ -53,18 +53,58 @@ func LoadCollection(name string) ([]models.Record, error) {
 	return records, nil
 }
 
-// SaveCollection saves all records to a JSON file with indentation
+// SaveCollection saves all records to a JSON file with indentation, atomically
 func SaveCollection(name string, records []models.Record) error {
 	filePath := filepath.Join(DataDir, name+".json")
-	file, err := os.Create(filePath)
+	backupPath := filePath + ".bak"
+	tempPath := filePath + ".tmp"
+
+	// Create backup if file exists
+	if _, err := os.Stat(filePath); err == nil {
+		if err := copyFile(filePath, backupPath); err != nil {
+			return err
+		}
+	}
+
+	// Write to temp file
+	tempFile, err := os.Create(tempPath)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer tempFile.Close()
 
-	encoder := json.NewEncoder(file)
+	encoder := json.NewEncoder(tempFile)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(records)
+	if err := encoder.Encode(records); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempPath, filePath); err != nil {
+		os.Remove(tempPath)
+		return err
+	}
+
+	return nil
+}
+
+// copyFile copies src to dst
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = destFile.ReadFrom(sourceFile)
+	return err
 }
 
 // FindRecordByID finds a record by ID in a collection
@@ -217,6 +257,102 @@ func GetRecordsPaginated(collection string, limit int, page int) ([]models.Recor
 	}
 
 	return records[start:end], total, page, nil
+}
+
+// BatchAdd adds multiple records atomically
+func BatchAdd(collection string, datas []json.RawMessage) ([]int, error) {
+	mu := getMutex(collection)
+	mu.Lock()
+	defer mu.Unlock()
+
+	records, err := LoadCollection(collection)
+	if err != nil {
+		return nil, err
+	}
+
+	recordLimitStr := os.Getenv("RECORD_LIMIT")
+	recordLimit := 1000
+	if rl, err := strconv.Atoi(recordLimitStr); err == nil {
+		recordLimit = rl
+	}
+	if len(records)+len(datas) > recordLimit {
+		return nil, fmt.Errorf("record limit exceeded: %d", recordLimit)
+	}
+
+	maxID := 0
+	for _, r := range records {
+		if r.ID > maxID {
+			maxID = r.ID
+		}
+	}
+
+	ids := make([]int, len(datas))
+	for i, data := range datas {
+		maxID++
+		ids[i] = maxID
+		records = append(records, models.Record{ID: maxID, Data: data})
+	}
+
+	if err := SaveCollection(collection, records); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// BatchUpdate updates multiple records atomically
+func BatchUpdate(collection string, updates []struct {
+	ID   int
+	Data json.RawMessage
+}) error {
+	mu := getMutex(collection)
+	mu.Lock()
+	defer mu.Unlock()
+
+	records, err := LoadCollection(collection)
+	if err != nil {
+		return err
+	}
+
+	recordMap := make(map[int]int) // id to index
+	for i, r := range records {
+		recordMap[r.ID] = i
+	}
+
+	for _, update := range updates {
+		if idx, exists := recordMap[update.ID]; exists {
+			records[idx].Data = update.Data
+		} else {
+			return fmt.Errorf("record %d not found", update.ID)
+		}
+	}
+
+	return SaveCollection(collection, records)
+}
+
+// BatchDelete deletes multiple records atomically
+func BatchDelete(collection string, ids []int) error {
+	mu := getMutex(collection)
+	mu.Lock()
+	defer mu.Unlock()
+
+	records, err := LoadCollection(collection)
+	if err != nil {
+		return err
+	}
+
+	idSet := make(map[int]bool)
+	for _, id := range ids {
+		idSet[id] = true
+	}
+
+	newRecords := make([]models.Record, 0)
+	for _, r := range records {
+		if !idSet[r.ID] {
+			newRecords = append(newRecords, r)
+		}
+	}
+
+	return SaveCollection(collection, newRecords)
 }
 
 // CreateCollection creates a new collection with initial records

@@ -148,6 +148,86 @@ func ListRecords(c *gin.Context) {
 	})
 }
 
+func BatchCreateRecord(c *gin.Context) {
+	collection := c.Param("collection")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+		return
+	}
+
+	var datas []json.RawMessage
+	if err := c.ShouldBindJSON(&datas); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON array"})
+		return
+	}
+
+	ids, err := storage.BatchAdd(collection, datas)
+	if err != nil {
+		log.Printf("Error batch creating records in %s: %v", collection, err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"ids": ids})
+}
+
+type BatchUpdateRequest struct {
+	ID   int             `json:"id"`
+	Data json.RawMessage `json:"data"`
+}
+
+func BatchUpdateRecord(c *gin.Context) {
+	collection := c.Param("collection")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+		return
+	}
+
+	var updates []BatchUpdateRequest
+	if err := c.ShouldBindJSON(&updates); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON array"})
+		return
+	}
+
+	updateStructs := make([]struct {
+		ID   int
+		Data json.RawMessage
+	}, len(updates))
+	for i, u := range updates {
+		updateStructs[i] = struct {
+			ID   int
+			Data json.RawMessage
+		}{ID: u.ID, Data: u.Data}
+	}
+
+	if err := storage.BatchUpdate(collection, updateStructs); err != nil {
+		log.Printf("Error batch updating records in %s: %v", collection, err)
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Records updated"})
+}
+
+func BatchDeleteRecord(c *gin.Context) {
+	collection := c.Param("collection")
+	if matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]+$`, collection); !matched {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid collection name"})
+		return
+	}
+
+	var ids []int
+	if err := c.ShouldBindJSON(&ids); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON array of IDs"})
+		return
+	}
+
+	if err := storage.BatchDelete(collection, ids); err != nil {
+		log.Printf("Error batch deleting records in %s: %v", collection, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete records"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Records deleted"})
+}
+
 type CreateCollectionRequest struct {
 	Name    string                   `json:"name" binding:"required"`
 	Records []map[string]interface{} `json:"records" binding:"required"`
