@@ -1,1 +1,6 @@
 {"level":"info","msg":"Starting server","port":"5000","time":"2026-02-02T23:42:13Z"}
+{"level":"info","msg":"Starting server","port":"5000","time":"2026-02-03T00:36:00Z"}
+{"collection":"users","error":"collection already exists","level":"error","msg":"Error creating collection","time":"2026-02-03T00:41:30Z"}
+{"collection":"students","level":"info","msg":"Collection created","time":"2026-02-03T00:41:50Z"}
+{"level":"info","msg":"Collection renamed","new":"customers","old":"students","time":"2026-02-03T00:42:42Z"}
+{"bin_path":"bin/20260203_004346_customers.json","collection":"customers","level":"info","msg":"Collection moved to bin","time":"2026-02-03T00:43:46Z"}

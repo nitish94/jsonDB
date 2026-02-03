@@ -40,6 +40,9 @@ func main() {
 	// Load configuration
 	config.Init()
 
+	// Set JWT secret in handlers
+	handlers.SetJWTSecret(config.GlobalConfig.JWTSecret)
+
 	// Ensure data directory
 	if err := storage.EnsureDataDir(); err != nil {
 		logrus.Fatal("Failed to create data directory:", err)

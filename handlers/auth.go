@@ -11,8 +11,8 @@ import (
 
 var jwtSecret []byte
 
-func init() {
-	jwtSecret = []byte(config.GlobalConfig.JWTSecret)
+func SetJWTSecret(secret string) {
+	jwtSecret = []byte(secret)
 }
 
 type LoginRequest struct {
