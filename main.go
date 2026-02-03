@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/didip/tollbooth/v7"
@@ -11,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/natefinch/lumberjack"
 	"github.com/sirupsen/logrus"
+	"json-db/config"
 	"json-db/handlers"
 	"json-db/storage"
 )
@@ -31,6 +36,9 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		logrus.Warn("No .env file found")
 	}
+
+	// Load configuration
+	config.Init()
 
 	// Ensure data directory
 	if err := storage.EnsureDataDir(); err != nil {
@@ -83,8 +91,30 @@ func main() {
 		port = "5000"
 	}
 
-	logrus.WithField("port", port).Info("Starting server")
-	if err := r.Run(":" + port); err != nil {
-		logrus.Fatal("Failed to start server:", err)
+	// Start server with graceful shutdown
+	srv := &http.Server{
+		Addr:    ":" + config.GlobalConfig.Port,
+		Handler: r,
 	}
+
+	go func() {
+		logrus.WithField("port", config.GlobalConfig.Port).Info("Starting server")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logrus.Fatal("Failed to start server:", err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	logrus.Info("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logrus.Fatal("Server forced to shutdown:", err)
+	}
+
+	logrus.Info("Server exited")
 }

@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/sirupsen/logrus"
+	"json-db/config"
 	"json-db/storage"
 )
 
@@ -109,14 +110,14 @@ func ListRecords(c *gin.Context) {
 	limitStr := c.Query("limit")
 	pageStr := c.Query("page")
 
-	limit := 25 // default
+	limit := config.GlobalConfig.DefaultLimit // default
 	if limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
 			limit = l
 		}
 	}
-	if limit > 50 {
-		limit = 50
+	if limit > config.GlobalConfig.MaxLimit {
+		limit = config.GlobalConfig.MaxLimit
 	}
 
 	page := 1 // default

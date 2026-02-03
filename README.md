@@ -207,7 +207,9 @@ curl http://localhost:5000/health
 
 ## Working Brief
 
-This API provides a simple JSON-based database system where each table is a JSON file containing an array of records. Operations are thread-safe with per-table locking, atomic writes for data integrity, and corruption detection (files with invalid JSON or duplicate IDs are moved to `corrupt/` folder). Authentication uses JWT tokens, and rate limiting prevents abuse. Logging captures all operations for monitoring.
+This API provides a simple JSON-based database system where each table is a JSON file containing an array of records. **Important Note**: Every operation reads and writes the entire JSON file, making it unsuitable for large-scale or high-frequency use. It's designed for small JSON files (e.g., up to 1000 records) used as simple databases. Users can adjust `RECORD_LIMIT` in .env, but values in the millions will cause performance issues or crashes. For larger datasets, consider proper databases.
+
+Operations are thread-safe with per-table locking, atomic writes for data integrity, and corruption detection (files with invalid JSON or duplicate IDs are moved to `corrupt/` folder). Authentication uses JWT tokens, and rate limiting prevents abuse. Graceful shutdown ensures operations complete before stopping. Logging captures all operations for monitoring.
 
 ## Notes
 
@@ -226,5 +228,7 @@ This API provides a simple JSON-based database system where each table is a JSON
 - Rate limiting applied to protected endpoints.
 - Logging: structured JSON logs with rotation (max 10MB, 3 backups, 28 days).
 - Mutex cache: LRU with capacity 1000 to prevent unbounded memory growth.
+- File-based: Entire JSON files are read/written per operation; not for large datasets.
+- Graceful shutdown: Handles SIGINT/SIGTERM, allows ongoing operations to complete.
 - No joins or complex queries; only single table operations.
 - Authentication required for all data operations; credentials not modifiable via API.

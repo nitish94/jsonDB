@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/hashicorp/golang-lru/v2"
 	"github.com/sirupsen/logrus"
+	"json-db/config"
 	"json-db/models"
 )
 
@@ -171,13 +171,8 @@ func AddRecord(collection string, data json.RawMessage) (int, error) {
 	}
 
 	// Check limit
-	recordLimitStr := os.Getenv("RECORD_LIMIT")
-	recordLimit := 1000
-	if rl, err := strconv.Atoi(recordLimitStr); err == nil {
-		recordLimit = rl
-	}
-	if len(records) >= recordLimit {
-		return 0, fmt.Errorf("record limit exceeded: %d", recordLimit)
+	if len(records) >= config.GlobalConfig.RecordLimit {
+		return 0, fmt.Errorf("record limit exceeded: %d", config.GlobalConfig.RecordLimit)
 	}
 
 	// Find max ID
@@ -247,16 +242,8 @@ func GetRecordsPaginated(collection string, limit int, page int) ([]models.Recor
 	mu.RLock()
 	defer mu.RUnlock()
 
-	defaultLimitStr := os.Getenv("DEFAULT_LIMIT")
-	maxLimitStr := os.Getenv("MAX_LIMIT")
-	defaultLimit := 25
-	maxLimit := 50
-	if dl, err := strconv.Atoi(defaultLimitStr); err == nil {
-		defaultLimit = dl
-	}
-	if ml, err := strconv.Atoi(maxLimitStr); err == nil {
-		maxLimit = ml
-	}
+	defaultLimit := config.GlobalConfig.DefaultLimit
+	maxLimit := config.GlobalConfig.MaxLimit
 
 	records, err := LoadCollection(collection)
 	if err != nil {
@@ -304,13 +291,8 @@ func BatchAdd(collection string, datas []json.RawMessage) ([]int, error) {
 		return nil, err
 	}
 
-	recordLimitStr := os.Getenv("RECORD_LIMIT")
-	recordLimit := 1000
-	if rl, err := strconv.Atoi(recordLimitStr); err == nil {
-		recordLimit = rl
-	}
-	if len(records)+len(datas) > recordLimit {
-		return nil, fmt.Errorf("record limit exceeded: %d", recordLimit)
+	if len(records)+len(datas) > config.GlobalConfig.RecordLimit {
+		return nil, fmt.Errorf("record limit exceeded: %d", config.GlobalConfig.RecordLimit)
 	}
 
 	maxID := 0

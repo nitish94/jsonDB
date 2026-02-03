@@ -2,21 +2,17 @@ package handlers
 
 import (
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"json-db/config"
 )
 
 var jwtSecret []byte
 
 func init() {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		secret = "default-secret-key" // fallback
-	}
-	jwtSecret = []byte(secret)
+	jwtSecret = []byte(config.GlobalConfig.JWTSecret)
 }
 
 type LoginRequest struct {
@@ -31,8 +27,8 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	username := os.Getenv("USERNAME")
-	password := os.Getenv("PASSWORD")
+	username := config.GlobalConfig.Username
+	password := config.GlobalConfig.Password
 
 	if req.Username != username || req.Password != password {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
